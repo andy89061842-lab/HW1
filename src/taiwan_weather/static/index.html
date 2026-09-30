@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="台灣天氣即時預報 - 串接中央氣象署 (CWA) 開放資料，提供全台 22 縣市今明 36 小時天氣預報、氣象特報與降雨機率分析。">
+    <title>台灣氣象即時預報 | Taiwan Weather Forecast</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- 背景動態光暈球體 -->
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+    <div class="ambient-glow glow-3"></div>
+
+    <div class="app-container">
+        <!-- 頂部導航列 -->
+        <header class="navbar" id="main-header">
+            <div class="brand">
+                <div class="logo-icon">🌦️</div>
+                <div class="brand-text">
+                    <h1>台灣天氣即時預報</h1>
+                    <span class="sub-brand">Taiwan Weather Forecast • CWA Open Data</span>
+                </div>
+            </div>
+
+            <div class="nav-actions">
+                <div class="status-badge" id="status-badge" title="資料連線狀態">
+                    <span class="status-dot"></span>
+                    <span id="status-text">載入中...</span>
+                </div>
+                <button class="action-btn" id="refresh-btn" title="重新整理預報資料">
+                    <span class="refresh-icon">🔄</span>
+                    <span class="btn-text">即時更新</span>
+                </button>
+                <a href="/docs" target="_blank" class="action-btn api-doc-link" title="檢視 FastAPI 互動文件">
+                    <span>📖 API Docs</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- 警特報橫幅 (若有特報時動態顯示) -->
+        <div class="alert-banner" id="alert-banner" style="display: none;">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-content">
+                <strong id="alert-headline">氣象警報</strong>
+                <p id="alert-desc">警報內容...</p>
+                <div class="alert-areas" id="alert-areas"></div>
+            </div>
+        </div>
+
+        <!-- 統計數據總覽區塊 -->
+        <section class="overview-section" id="overview-section">
+            <div class="stat-card">
+                <div class="stat-icon">🌡️</div>
+                <div class="stat-info">
+                    <span class="stat-label">全台平均氣溫</span>
+                    <h3 class="stat-value" id="stat-avg-temp">-- °C</h3>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🔥</div>
+                <div class="stat-info">
+                    <span class="stat-label">今日最高氣溫</span>
+                    <h3 class="stat-value" id="stat-max-temp">-- °C</h3>
+                    <span class="stat-sub" id="stat-max-city">--</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">💧</div>
+                <div class="stat-info">
+                    <span class="stat-label">全台最高降雨機率</span>
+                    <h3 class="stat-value" id="stat-max-pop">-- %</h3>
+                    <span class="stat-sub" id="stat-pop-city">--</span>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🕒</div>
+                <div class="stat-info">
+                    <span class="stat-label">氣象署預報時間</span>
+                    <h3 class="stat-value time-val" id="stat-update-time">--:--</h3>
+                    <span class="stat-sub">涵蓋今明 36 小時</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 檢視切換工具列 (卡片 / 地圖 / 圖表) -->
+        <nav class="view-switcher-bar">
+            <div class="view-switcher" id="view-switcher">
+                <button class="view-btn active" data-view="cards" id="tab-cards">
+                    <span class="view-icon">🗂️</span>
+                    <span>縣市卡片清單</span>
+                </button>
+                <button class="view-btn" data-view="map" id="tab-map">
+                    <span class="view-icon">🗺️</span>
+                    <span>台灣即時氣象地圖</span>
+                </button>
+                <button class="view-btn" data-view="charts" id="tab-charts">
+                    <span class="view-icon">📊</span>
+                    <span>全台氣候圖表</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- 視圖 1: 縣市卡片清單 (Cards View) -->
+        <div class="view-content active" id="view-cards">
+            <!-- 篩選與搜尋工具列 -->
+            <section class="control-panel" id="control-panel">
+                <!-- 分區快速標籤 -->
+                <div class="region-tabs" id="region-tabs">
+                    <button class="region-tab active" data-region="全部">全台 (22)</button>
+                    <button class="region-tab" data-region="北部">北部 (7)</button>
+                    <button class="region-tab" data-region="中部">中部 (5)</button>
+                    <button class="region-tab" data-region="南部">南部 (5)</button>
+                    <button class="region-tab" data-region="東部">東部 (2)</button>
+                    <button class="region-tab" data-region="離島">離島 (3)</button>
+                </div>
+
+                <!-- 搜尋與排序 -->
+                <div class="search-sort-bar">
+                    <div class="search-box">
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="search-input" placeholder="搜尋縣市（例如：臺北、高雄、花蓮）..." autocomplete="off">
+                        <button class="clear-search-btn" id="clear-search-btn" style="display: none;">✕</button>
+                    </div>
+                    <div class="sort-box">
+                        <label for="sort-select">排序：</label>
+                        <select id="sort-select">
+                            <option value="default">預設區域排序</option>
+                            <option value="temp-desc">氣溫（由高至低）</option>
+                            <option value="temp-asc">氣溫（由低至高）</option>
+                            <option value="pop-desc">降雨機率（由高至低）</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 氣象卡片展示網格 -->
+            <main class="forecast-grid" id="forecast-grid">
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>正在同步中央氣象署最新預報資料...</p>
+                </div>
+            </main>
+        </div>
+
+        <!-- 視圖 2: 台灣即時氣象地圖 (Interactive Map View) -->
+        <div class="view-content" id="view-map" style="display: none;">
+            <div class="map-view-container">
+                <!-- 地圖控制工具列 -->
+                <div class="map-toolbar">
+                    <div class="map-mode-selector">
+                        <span class="toolbar-label">地圖著色模式：</span>
+                        <div class="mode-btn-group" id="map-mode-group">
+                            <button class="mode-btn active" data-mode="temp" id="btn-mode-temp">
+                                <span>🌡️ 氣溫熱力圖</span>
+                            </button>
+                            <button class="mode-btn" data-mode="rain" id="btn-mode-rain">
+                                <span>💧 降雨機率圖</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 圖例說明 -->
+                    <div class="map-legend" id="map-legend">
+                        <div class="legend-scale" id="legend-scale"></div>
+                        <div class="legend-labels" id="legend-labels">
+                            <span id="legend-min">18°C</span>
+                            <span id="legend-mid">26°C</span>
+                            <span id="legend-max">34°C+</span>
+                        </div>
+                    </div>
+
+                    <div class="map-actions">
+                        <button class="map-tool-btn" id="reset-map-zoom" title="重置地圖視角">
+                            <span>⟲ 重置視角</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 地圖主版面：左側向量地圖 + 右側縣市即時焦點面板 -->
+                <div class="map-split-layout">
+                    <div class="map-canvas-card">
+                        <div class="map-loading-overlay" id="map-loading">
+                            <div class="spinner"></div>
+                            <p>載入台灣高精地理圖資中...</p>
+                        </div>
+                        <div class="map-svg-wrapper" id="map-svg-wrapper">
+                            <svg id="taiwan-map-svg" viewBox="0 0 760 820" preserveAspectRatio="xMidYMid meet"></svg>
+                            <div class="map-tooltip" id="map-tooltip" style="display: none;"></div>
+                        </div>
+                        <div class="map-hint">💡 提示：點擊任一縣市可查看即時氣候細節與趨勢</div>
+                    </div>
+
+                    <!-- 右側焦點面板 -->
+                    <div class="map-spotlight-card" id="map-spotlight-card">
+                        <div class="spotlight-header">
+                            <div class="spotlight-badge" id="spotlight-region">北部</div>
+                            <h2 class="spotlight-title" id="spotlight-city-name">臺北市</h2>
+                        </div>
+
+                        <div class="spotlight-hero">
+                            <span class="spotlight-icon" id="spotlight-icon">⛅</span>
+                            <div class="spotlight-temp-group">
+                                <div class="spotlight-temp" id="spotlight-temp">--°</div>
+                                <div class="spotlight-desc" id="spotlight-desc">載入中...</div>
+                            </div>
+                        </div>
+
+                        <div class="spotlight-metrics">
+                            <div class="metric-box">
+                                <span class="metric-label">氣溫範圍</span>
+                                <span class="metric-val" id="spotlight-range">--° ~ --°</span>
+                            </div>
+                            <div class="metric-box">
+                                <span class="metric-label">降雨機率</span>
+                                <span class="metric-val" id="spotlight-pop">-- %</span>
+                            </div>
+                            <div class="metric-box">
+                                <span class="metric-label">舒適度指標</span>
+                                <span class="metric-val" id="spotlight-comfort">--</span>
+                            </div>
+                        </div>
+
+                        <h4 class="spotlight-sub-title">未來 36 小時概況</h4>
+                        <div class="spotlight-periods" id="spotlight-periods">
+                            <!-- JS 動態生成 -->
+                        </div>
+
+                        <button class="spotlight-action-btn" id="spotlight-open-modal-btn">
+                            <span>🔍 查看 36 小時完整圖表與指南</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 視圖 3: 全台氣象分析圖表 (Analytics Charts View) -->
+        <div class="view-content" id="view-charts" style="display: none;">
+            <div class="charts-view-container">
+                <!-- 圖表 1: 22 縣市綜合比對圖 -->
+                <div class="chart-card full-width">
+                    <div class="chart-card-header">
+                        <div class="chart-title-group">
+                            <div class="chart-icon">📊</div>
+                            <div>
+                                <h3 class="chart-title">全台 22 縣市氣溫區間與降雨機率綜合對比</h3>
+                                <p class="chart-sub">即時比較各縣市高低氣溫區間 (柱狀) 與當前降雨機率 (折線/標籤)</p>
+                            </div>
+                        </div>
+                        <div class="chart-actions">
+                            <select id="chart-sort-select" class="chart-select">
+                                <option value="default">預設區域排序</option>
+                                <option value="temp-desc">最高溫（由高至低）</option>
+                                <option value="temp-asc">最低溫（由低至高）</option>
+                                <option value="pop-desc">降雨機率（由高至低）</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="chart-canvas-container large">
+                        <canvas id="county-comparison-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 雙欄圖表網格 -->
+                <div class="charts-grid-two">
+                    <!-- 圖表 2: 五大分區氣候指標對比 -->
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-title-group">
+                                <div class="chart-icon">🌐</div>
+                                <div>
+                                    <h3 class="chart-title">五大分區氣候指標</h3>
+                                    <p class="chart-sub">北部、中部、南部、東部、離島 平均溫度與平均降雨率</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chart-canvas-container">
+                            <canvas id="regional-climate-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 圖表 3: 全台降雨風險分佈 -->
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <div class="chart-title-group">
+                                <div class="chart-icon">🌧️</div>
+                                <div>
+                                    <h3 class="chart-title">降雨機率分級分佈</h3>
+                                    <p class="chart-sub">全台 22 縣市降雨強度等級分佈比例</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chart-canvas-container">
+                            <canvas id="rainfall-risk-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 頁尾說明 -->
+        <footer class="app-footer">
+            <p>資料來源：<a href="https://opendata.cwa.gov.tw/" target="_blank" rel="noopener">交通部中央氣象署 (CWA) 開放資料平臺</a> ｜ 資料代碼：F-C0032-001 (一般天氣預報-今明36小時)</p>
+            <p class="copyright">Taiwan Weather Web App • Built with FastAPI, Vanilla CSS & Modern JS</p>
+        </footer>
+    </div>
+
+    <!-- 縣市詳細彈窗 Modal -->
+    <div class="modal-backdrop" id="detail-modal" style="display: none;">
+        <div class="modal-card">
+            <button class="modal-close" id="modal-close-btn">&times;</button>
+            <div class="modal-header">
+                <div class="modal-city-badge">
+                    <h2 id="modal-city-name">臺北市</h2>
+                    <span class="modal-region-tag" id="modal-region">北部</span>
+                </div>
+                <div class="modal-weather-main">
+                    <span class="modal-icon" id="modal-weather-icon">☀️</span>
+                    <div class="modal-temp-box">
+                        <span class="modal-temp" id="modal-temp">28°</span>
+                        <span class="modal-desc" id="modal-desc">晴時多雲</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-body">
+                <!-- 彈窗內 36 小時氣溫與降雨趨勢圖 -->
+                <div class="modal-chart-section">
+                    <h4 class="section-title">氣溫與降雨 36 小時趨勢分析</h4>
+                    <div class="modal-chart-box">
+                        <canvas id="modal-forecast-chart"></canvas>
+                    </div>
+                </div>
+
+                <h4 class="section-title">未來 36 小時三時段精準預報</h4>
+                <div class="modal-timeline" id="modal-timeline">
+                    <!-- 動態由 JavaScript 生成時段明細 -->
+                </div>
+
+                <div class="weather-tips-box" id="weather-tips-box">
+                    <div class="tips-icon">💡</div>
+                    <div class="tips-content">
+                        <strong>穿著與外出指南</strong>
+                        <p id="modal-tips-text">氣候舒適，適合各類戶外活動，建議著輕便服裝。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 函式庫相依性 (本地載入確保離線正常運作) -->
+    <script src="/static/vendor/d3.min.js"></script>
+    <script src="/static/vendor/topojson-client.min.js"></script>
+    <script src="/static/vendor/chart.umd.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
